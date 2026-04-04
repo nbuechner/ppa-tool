@@ -6,35 +6,71 @@ import logging
 import traceback
 import threading
 import time
+import configparser
 from launchpadlib.launchpad import Launchpad
+from launchpadlib.credentials import Credentials
+
+
+def create_launchpad_connection(name, log=None):
+    """Create a Launchpad connection, using credentials file if available."""
+    credentials_file = os.path.expanduser("~/.secret/lp.txt")
+    lp = None
+    if os.path.exists(credentials_file):
+        try:
+            # Load credentials directly from the INI file — avoids login_with()
+            # which starts an interactive OAuth browser flow when the token is
+            # invalid, instead of raising an exception.
+            cfg = configparser.ConfigParser()
+            cfg.read(credentials_file)
+            if not cfg.has_section('1'):
+                raise ValueError("Credentials file missing [1] section")
+            consumer_key = cfg.get('1', 'consumer_key', fallback='?')
+            if log:
+                log.info("Launchpad login: loading stored token from %s (consumer_key=%s)" % (credentials_file, consumer_key))
+            # Use Credentials.load() — the most portable way across launchpadlib
+            # versions; reads consumer_key, access_token etc. directly from the
+            # INI file without needing to know the exact constructor signature.
+            credentials = Credentials()
+            with open(credentials_file) as f:
+                credentials.load(f)
+            lp = Launchpad(credentials,
+                           None,   # authorization_engine
+                           None,   # credential_store
+                           service_root='https://api.launchpad.net/',
+                           version='devel')
+            # Validate the token with a lightweight call before declaring success
+            _ = lp.me.name
+            if log:
+                log.info("Launchpad login: authenticated login succeeded (as %s)" % lp.me.name)
+        except Exception as e:
+            if log:
+                log.warning("Launchpad login: authenticated login failed (%s), falling back to anonymous" % e)
+            lp = None
+    if lp is None:
+        if log:
+            log.info("Launchpad login: using anonymous access")
+        lp = Launchpad.login_anonymously(
+            'maubot-queuebot', 'production',
+            launchpadlib_dir="/tmp/queuebot-%s/" % name,
+            version='devel')
+    return lp
+
 
 class QueueScanner(threading.Thread):
     notices = list()
     log = logging.getLogger(__name__)
+    lp = None
+    queue_plugin = None
 
     def run(self):
         scan_start = time.time()
         self.log.info("Queue[%s] scan started" % self.queue)
         try:
-            # Login to Launchpad (authenticated if credentials exist, otherwise anonymous)
-            credentials_file = os.path.expanduser("~/.secret/lp.txt")
-            self.lp = None
-            if os.path.exists(credentials_file):
-                try:
-                    self.log.info("Launchpad login: attempting authenticated login from %s" % credentials_file)
-                    self.lp = Launchpad.login_with(
-                        'maubot-queuebot', 'production',
-                        credentials_file=credentials_file,
-                        launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
-                    self.log.info("Launchpad login: authenticated login succeeded")
-                except Exception as e:
-                    self.log.warning("Launchpad login: authenticated login failed (%s), falling back to anonymous" % e)
-                    self.lp = None
+            # Create Launchpad connection on first scan, then reuse it
             if self.lp is None:
-                self.log.info("Launchpad login: using anonymous access")
-                self.lp = Launchpad.login_anonymously(
-                    'maubot-queuebot', 'production',
-                    launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
+                self.lp = create_launchpad_connection(self.queue, self.log)
+                if self.queue_plugin is not None:
+                    self.queue_plugin.lp = self.lp
 
             self.notices = list()
 
@@ -140,7 +176,7 @@ class QueueScanner(threading.Thread):
                     else:
                         pkg_pkgsets = "no packageset"
 
-                    # Post the mssage to the channel
+                    # Post the message to the channel
                     message = ""
                     if self.queue == 'New':
                         if pkg_arch == "source":
@@ -191,6 +227,10 @@ class Queue():
         self.verbose = verbose
         self.log = log
         self.queue_state = dict()
+        # Persistent Launchpad connection — created on first scan (in background
+        # thread), then reused for all subsequent scans to avoid repeated TLS
+        # handshake overhead.
+        self.lp = None
         self.spawn_scanner()
 
     def spawn_scanner(self):
@@ -201,6 +241,8 @@ class Queue():
         self.scanner.queue_state = self.queue_state
         self.scanner.verbose = self.verbose
         self.scanner.queue = self.queue
+        self.scanner.lp = self.lp          # None on first scan; set after
+        self.scanner.queue_plugin = self    # Reference so scanner can store lp back
         if self.log is not None:
             self.scanner.log = self.log
         self.scanner.start()
@@ -212,7 +254,7 @@ class Queue():
         # Get the result from the thread
         notices = list(self.scanner.notices)
 
-        # Spawn a new insance of the monitoring thread
+        # Spawn a new instance of the monitoring thread
         self.spawn_scanner()
 
         return notices

@@ -1,42 +1,29 @@
 #!/usr/bin/python
 from __future__ import print_function
 
-import os
 import logging
 import traceback
 import threading
 import time
-from launchpadlib.launchpad import Launchpad
+from .queue import create_launchpad_connection
 
 
 class PackagesetScanner(threading.Thread):
     notices = list()
     log = logging.getLogger(__name__)
     series_statuses = []
+    lp = None
+    queue_plugin = None
 
     def run(self):
         scan_start = time.time()
         self.log.info("Packageset[%s] scan started" % self.queue)
         try:
-            # Login to Launchpad (authenticated if credentials exist, otherwise anonymous)
-            credentials_file = os.path.expanduser("~/.secret/lp.txt")
-            self.lp = None
-            if os.path.exists(credentials_file):
-                try:
-                    self.log.info("Launchpad login: attempting authenticated login from %s" % credentials_file)
-                    self.lp = Launchpad.login_with(
-                        'maubot-queuebot', 'production',
-                        credentials_file=credentials_file,
-                        launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
-                    self.log.info("Launchpad login: authenticated login succeeded")
-                except Exception as e:
-                    self.log.warning("Launchpad login: authenticated login failed (%s), falling back to anonymous" % e)
-                    self.lp = None
+            # Create Launchpad connection on first scan, then reuse it
             if self.lp is None:
-                self.log.info("Launchpad login: using anonymous access")
-                self.lp = Launchpad.login_anonymously(
-                    'maubot-queuebot', 'production',
-                    launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
+                self.lp = create_launchpad_connection(self.queue, self.log)
+                if self.queue_plugin is not None:
+                    self.queue_plugin.lp = self.lp
 
             self.notices = list()
 
@@ -128,6 +115,10 @@ class Packageset():
         self.log = log
         self.series_statuses = series_statuses or []
         self.queue_state = dict()
+        # Persistent Launchpad connection — created on first scan (in background
+        # thread), then reused for all subsequent scans to avoid repeated TLS
+        # handshake overhead.
+        self.lp = None
         self.spawn_scanner()
 
     def spawn_scanner(self):
@@ -139,6 +130,8 @@ class Packageset():
         self.scanner.verbose = self.verbose
         self.scanner.queue = self.queue
         self.scanner.series_statuses = self.series_statuses
+        self.scanner.lp = self.lp          # None on first scan; set after
+        self.scanner.queue_plugin = self    # Reference so scanner can store lp back
         if self.log is not None:
             self.scanner.log = self.log
         self.scanner.start()
@@ -150,7 +143,7 @@ class Packageset():
         # Get the result from the thread
         notices = list(self.scanner.notices)
 
-        # Spawn a new insance of the monitoring thread
+        # Spawn a new instance of the monitoring thread
         self.spawn_scanner()
 
         return notices
