@@ -1,5 +1,5 @@
 id: com.ubuntu.qbot
-version: 1.0.1
+version: 1.0.2
 modules:
 - queuebot
 main_class: Queuebot
@@ -10,5 +10,6 @@ webapp: false
 license: MIT
 extra_files:
 - base-config.yaml
-dependencies: []
+dependencies:
+- launchpadlib
 soft_dependencies: []

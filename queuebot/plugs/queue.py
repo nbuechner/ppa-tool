@@ -1,6 +1,7 @@
 #!/usr/bin/python
 from __future__ import print_function
 
+import os
 import traceback
 import threading
 from launchpadlib.launchpad import Launchpad
@@ -10,10 +11,19 @@ class QueueScanner(threading.Thread):
 
     def run(self):
         try:
-            # Authenticated login to Launchpad
-            self.lp = Launchpad.login_anonymously(
-                'maubot-queuebot', 'production',
-                launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
+            # Login to Launchpad (authenticated if credentials exist, otherwise anonymous)
+            credentials_file = os.path.expanduser("~/.secret/lp.txt")
+            if os.path.exists(credentials_file):
+                print("Launchpad login: using authenticated account from %s" % credentials_file)
+                self.lp = Launchpad.login_with(
+                    'maubot-queuebot', 'production',
+                    credentials_file=credentials_file,
+                    launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
+            else:
+                print("Launchpad login: using anonymous access (no credentials file found at %s)" % credentials_file)
+                self.lp = Launchpad.login_anonymously(
+                    'maubot-queuebot', 'production',
+                    launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
 
             self.notices = list()
 
