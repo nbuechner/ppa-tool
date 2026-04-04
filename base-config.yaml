@@ -1,4 +1,13 @@
 update_interval: 5
+# Launchpad series statuses to monitor for packageset changes.
+# Possible values: Active Development, Pre-release Freeze, Frozen,
+#                  Current Stable Release, Supported, Experimental
+# Reducing this list significantly reduces Launchpad API calls.
+packageset_series_statuses:
+  - Active Development
+  - Pre-release Freeze
+  - Frozen
+  - Current Stable Release
 whitelist:
 - '@ravage:xentonix.net'
 rooms:

@@ -5,6 +5,7 @@ import os
 import logging
 import traceback
 import threading
+import time
 from launchpadlib.launchpad import Launchpad
 
 class QueueScanner(threading.Thread):
@@ -12,6 +13,8 @@ class QueueScanner(threading.Thread):
     log = logging.getLogger(__name__)
 
     def run(self):
+        scan_start = time.time()
+        self.log.info("Queue[%s] scan started" % self.queue)
         try:
             # Login to Launchpad (authenticated if credentials exist, otherwise anonymous)
             credentials_file = os.path.expanduser("~/.secret/lp.txt")
@@ -173,6 +176,8 @@ class QueueScanner(threading.Thread):
         except:
             # We don't want the bot to crash when LP fails
             traceback.print_exc()
+        finally:
+            self.log.info("Queue[%s] scan finished in %.1f seconds" % (self.queue, time.time() - scan_start))
 
 
 class Queue():

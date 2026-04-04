@@ -29,6 +29,7 @@ class Config(BaseProxyConfig):
   def do_update(self, helper: ConfigUpdateHelper) -> None:
     helper.copy("whitelist")
     helper.copy("rooms")
+    helper.copy("packageset_series_statuses")
 
 class Queuebot(Plugin):
   reminder_loop_task: asyncio.Future
@@ -46,7 +47,12 @@ class Queuebot(Plugin):
     self.log = logger
     self.plugin_queue_new = queue.Queue("New", self.VERBOSE, self.log)
     self.plugin_queue_unapproved = queue.Queue("Unapproved", self.VERBOSE, self.log)
-    self.plugin_packageset = packageset.Packageset("Packageset", self.VERBOSE, self.log)
+    self.plugin_packageset = packageset.Packageset(
+        "Packageset", self.VERBOSE, self.log,
+        series_statuses=self.config.get("packageset_series_statuses", [
+            "Active Development", "Pre-release Freeze", "Frozen", "Current Stable Release"
+        ])
+    )
     self.plugin_tracker = tracker.Tracker("Builds", self.VERBOSE)
     if await self.resolve_room_aliases():
         self.poll_task = asyncio.create_task(self.poll_plugins())
