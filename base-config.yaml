@@ -1,4 +1,5 @@
 update_interval: 5
+packageset_update_interval: 10
 # Launchpad series statuses to monitor for packageset changes.
 # Possible values: Active Development, Pre-release Freeze, Frozen,
 #                  Current Stable Release, Supported, Experimental

@@ -29,6 +29,7 @@ class Config(BaseProxyConfig):
   def do_update(self, helper: ConfigUpdateHelper) -> None:
     helper.copy("whitelist")
     helper.copy("rooms")
+    helper.copy("packageset_update_interval")
     helper.copy("packageset_series_statuses")
     helper.copy("packageset_include_latest_lts")
 
@@ -56,6 +57,7 @@ class Queuebot(Plugin):
         include_latest_lts=self.config.get("packageset_include_latest_lts", True),
     )
     self.plugin_tracker = tracker.Tracker("Builds", self.VERBOSE)
+    self._last_packageset_poll = 0
     if await self.resolve_room_aliases():
         self.poll_task = asyncio.create_task(self.poll_plugins())
         self.log.info("Queuebot started")
@@ -206,7 +208,17 @@ class Queuebot(Plugin):
             await asyncio.sleep(self.config["update_interval"] * 60)
   async def _poll_once(self) -> None:
     try:
-        plugins_to_poll = [self.plugin_queue_new, self.plugin_queue_unapproved, self.plugin_tracker, self.plugin_packageset]
+        now = time()
+        packageset_interval = self.config.get("packageset_update_interval", 10) * 60
+        poll_packageset = (now - self._last_packageset_poll) >= packageset_interval
+        if poll_packageset:
+            self.log.debug(f"Packageset interval elapsed ({packageset_interval}s), including in this poll")
+        else:
+            self.log.debug(f"Packageset interval not elapsed, skipping packageset this poll")
+        plugins_to_poll = [self.plugin_queue_new, self.plugin_queue_unapproved, self.plugin_tracker]
+        if poll_packageset:
+            plugins_to_poll.append(self.plugin_packageset)
+            self._last_packageset_poll = now
         for plugin_name in plugins_to_poll:
             if not hasattr(plugin_name, 'update'):
                 continue
