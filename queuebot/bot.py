@@ -33,10 +33,6 @@ class Config(BaseProxyConfig):
 class Queuebot(Plugin):
   reminder_loop_task: asyncio.Future
   VERBOSE=False
-  plugin_queue_new = queue.Queue("New", VERBOSE)
-  plugin_queue_unapproved = queue.Queue("Unapproved", VERBOSE)
-  plugin_packageset = packageset.Packageset("Packageset", VERBOSE)
-  plugin_tracker = tracker.Tracker("Builds", VERBOSE)
   room_ids = []
   room_mapping = {}
   power_level_cache: dict[RoomID, tuple[int, PowerLevelStateEventContent]]
@@ -48,6 +44,10 @@ class Queuebot(Plugin):
     logger = logging.getLogger(self.id)
     logger.setLevel(logging.DEBUG)
     self.log = logger
+    self.plugin_queue_new = queue.Queue("New", self.VERBOSE, self.log)
+    self.plugin_queue_unapproved = queue.Queue("Unapproved", self.VERBOSE, self.log)
+    self.plugin_packageset = packageset.Packageset("Packageset", self.VERBOSE, self.log)
+    self.plugin_tracker = tracker.Tracker("Builds", self.VERBOSE)
     if await self.resolve_room_aliases():
         self.poll_task = asyncio.create_task(self.poll_plugins())
         self.log.info("Queuebot started")

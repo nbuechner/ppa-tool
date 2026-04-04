@@ -2,25 +2,33 @@
 from __future__ import print_function
 
 import os
+import logging
 import traceback
 import threading
 from launchpadlib.launchpad import Launchpad
 
 class QueueScanner(threading.Thread):
     notices = list()
+    log = logging.getLogger(__name__)
 
     def run(self):
         try:
             # Login to Launchpad (authenticated if credentials exist, otherwise anonymous)
             credentials_file = os.path.expanduser("~/.secret/lp.txt")
+            self.lp = None
             if os.path.exists(credentials_file):
-                print("Launchpad login: using authenticated account from %s" % credentials_file)
-                self.lp = Launchpad.login_with(
-                    'maubot-queuebot', 'production',
-                    credentials_file=credentials_file,
-                    launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
-            else:
-                print("Launchpad login: using anonymous access (no credentials file found at %s)" % credentials_file)
+                try:
+                    self.log.info("Launchpad login: attempting authenticated login from %s" % credentials_file)
+                    self.lp = Launchpad.login_with(
+                        'maubot-queuebot', 'production',
+                        credentials_file=credentials_file,
+                        launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
+                    self.log.info("Launchpad login: authenticated login succeeded")
+                except Exception as e:
+                    self.log.warning("Launchpad login: authenticated login failed (%s), falling back to anonymous" % e)
+                    self.lp = None
+            if self.lp is None:
+                self.log.info("Launchpad login: using anonymous access")
                 self.lp = Launchpad.login_anonymously(
                     'maubot-queuebot', 'production',
                     launchpadlib_dir="/tmp/queuebot-%s/" % self.queue)
@@ -173,9 +181,11 @@ class Queue():
     name = "queue"
     queue = ""
 
-    def __init__(self, queue, verbose=False):
+    def __init__(self, queue, verbose=False, log=None):
         self.queue = queue
         self.verbose = verbose
+        self.log = log
+        self.queue_state = dict()
         self.spawn_scanner()
 
     def spawn_scanner(self):
@@ -186,6 +196,8 @@ class Queue():
         self.scanner.queue_state = self.queue_state
         self.scanner.verbose = self.verbose
         self.scanner.queue = self.queue
+        if self.log is not None:
+            self.scanner.log = self.log
         self.scanner.start()
 
     def update(self):
