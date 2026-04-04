@@ -1,5 +1,5 @@
 id: com.ubuntu.qbot
-version: 1.0.4
+version: 1.0.5
 modules:
 - queuebot
 main_class: Queuebot
