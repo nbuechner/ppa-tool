@@ -8,10 +8,24 @@ import time
 from .queue import create_launchpad_connection
 
 
+def _is_lts(version):
+    """Return True if the Ubuntu version string looks like an LTS release.
+    Ubuntu LTS releases ship in even years in April: 14.04, 16.04, ..., 24.04.
+    """
+    try:
+        parts = version.split('.')
+        year = int(parts[0])
+        month = int(parts[1])
+        return month == 4 and year % 2 == 0
+    except (ValueError, IndexError, AttributeError):
+        return False
+
+
 class PackagesetScanner(threading.Thread):
     notices = list()
     log = logging.getLogger(__name__)
     series_statuses = []
+    include_latest_lts = False
     lp = None
     queue_plugin = None
 
@@ -31,6 +45,21 @@ class PackagesetScanner(threading.Thread):
             all_statuses = self.series_statuses
             ubuntu_series = [series for series in ubuntu.series
                              if series.active and (not all_statuses or series.status in all_statuses)]
+
+            # Optionally add the latest active LTS series (e.g. noble/24.04) even
+            # if its status ("Supported") is not in series_statuses.
+            if self.include_latest_lts:
+                included_names = {s.name for s in ubuntu_series}
+                lts_candidates = [
+                    s for s in ubuntu.series
+                    if s.active and _is_lts(s.version) and s.name not in included_names
+                ]
+                if lts_candidates:
+                    latest_lts = max(lts_candidates, key=lambda s: s.version)
+                    ubuntu_series.append(latest_lts)
+                    self.log.info("Packageset[%s] added latest LTS: %s %s (%s)" % (
+                        self.queue, latest_lts.name, latest_lts.version, latest_lts.status))
+
             self.log.info("Packageset[%s] scanning %d series: %s" % (
                 self.queue, len(ubuntu_series),
                 ", ".join("%s (%s)" % (s.name, s.status) for s in ubuntu_series)))
@@ -109,11 +138,12 @@ class Packageset():
     name = "packageset"
     queue = ""
 
-    def __init__(self, queue, verbose=False, log=None, series_statuses=None):
+    def __init__(self, queue, verbose=False, log=None, series_statuses=None, include_latest_lts=False):
         self.queue = queue
         self.verbose = verbose
         self.log = log
         self.series_statuses = series_statuses or []
+        self.include_latest_lts = include_latest_lts
         self.queue_state = dict()
         # Persistent Launchpad connection — created on first scan (in background
         # thread), then reused for all subsequent scans to avoid repeated TLS
@@ -130,6 +160,7 @@ class Packageset():
         self.scanner.verbose = self.verbose
         self.scanner.queue = self.queue
         self.scanner.series_statuses = self.series_statuses
+        self.scanner.include_latest_lts = self.include_latest_lts
         self.scanner.lp = self.lp          # None on first scan; set after
         self.scanner.queue_plugin = self    # Reference so scanner can store lp back
         if self.log is not None:

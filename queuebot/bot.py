@@ -30,6 +30,7 @@ class Config(BaseProxyConfig):
     helper.copy("whitelist")
     helper.copy("rooms")
     helper.copy("packageset_series_statuses")
+    helper.copy("packageset_include_latest_lts")
 
 class Queuebot(Plugin):
   reminder_loop_task: asyncio.Future
@@ -51,7 +52,8 @@ class Queuebot(Plugin):
         "Packageset", self.VERBOSE, self.log,
         series_statuses=self.config.get("packageset_series_statuses", [
             "Active Development", "Pre-release Freeze", "Frozen", "Current Stable Release"
-        ])
+        ]),
+        include_latest_lts=self.config.get("packageset_include_latest_lts", True),
     )
     self.plugin_tracker = tracker.Tracker("Builds", self.VERBOSE)
     if await self.resolve_room_aliases():

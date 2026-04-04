@@ -8,6 +8,9 @@ packageset_series_statuses:
   - Pre-release Freeze
   - Frozen
   - Current Stable Release
+# Also scan the latest active LTS release (e.g. noble/24.04) even when its
+# status is "Supported" and not listed in packageset_series_statuses above.
+packageset_include_latest_lts: true
 whitelist:
 - '@ravage:xentonix.net'
 rooms:
